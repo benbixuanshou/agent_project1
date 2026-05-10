@@ -53,6 +53,8 @@ class Supervisor:
         self.action_agent = action_agent
         self.gateway = IntentGateway()
         self.skill_loader = SkillLoader()
+        from app.skills.loader import set_skill_loader
+        set_skill_loader(self.skill_loader)
 
     def _fast_route(self, query: str) -> str | None:
         config = self.gateway.route(query)
@@ -96,7 +98,12 @@ class Supervisor:
         return {"target": "rag", "reason": "default fallback"}
 
     def _inject_context(self, query: str, target: str) -> str:
-        """Build skill-enhanced query context."""
+        """Build skill-enhanced query context.
+
+        For SRE/Platform Agent: inject skill catalog (on-demand via search_skill)
+        instead of full skill bodies. This saves tokens and lets the Agent decide
+        which skills are actually relevant to the problem.
+        """
         parts = []
 
         # IntentGateway prompt extension
@@ -104,12 +111,18 @@ class Supervisor:
         if config.prompt_extension:
             parts.append(f"[场景指引]\n{config.prompt_extension}")
 
-        # Matched skills for troubleshooting
-        if target == "sre":
-            matched = self.skill_loader.match(query, top_k=2)
-            if matched:
-                for s in matched:
-                    parts.append(f"[技能: {s['name']}]\n{s['body'][:1500]}")
+        # Skill catalog for agents that do troubleshooting (SRE / Platform)
+        if target in ("sre", "platform"):
+            catalog = self.skill_loader.get_catalog()
+            guide = self.skill_loader.get_skill("skill-selector")
+            if guide:
+                parts.append(
+                    f"[技能选择指引]\n"
+                    f"请根据问题选择合适的排查技能。可用技能目录:\n\n"
+                    f"{catalog}\n\n"
+                    f"用法: 调用 search_skill(name) 加载选中技能的完整排查流程和输出格式。"
+                    f"不确定时先加载最接近的一个试试。"
+                )
 
         if parts:
             return "\n\n".join(parts) + f"\n\n用户问题: {query}"
