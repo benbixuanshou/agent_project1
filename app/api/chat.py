@@ -1,4 +1,5 @@
 import json
+import logging
 
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse, JSONResponse
@@ -7,6 +8,7 @@ from app.middleware.auth import get_tenant_context
 from app.models.schemas import ChatRequest, ApiResponse, ChatResponse, SseMessage
 from app.session.manager import session_store
 
+logger = logging.getLogger("superbizagent")
 router = APIRouter(tags=["chat"])
 
 
@@ -23,11 +25,32 @@ async def chat(request: Request, req: ChatRequest):
             content=ApiResponse(code=400, message="Question cannot be empty").model_dump()
         )
 
+    # ── Harness: input guardrail ──
+    ge = getattr(request.app.state, "guardrail_engine", None)
+    if ge:
+        result = ge.check("input", {"query": req.Question})
+        if result.action == "block":
+            return JSONResponse(
+                content=ApiResponse(code=403, message=str(result.message)).model_dump()
+            )
+
     session = await session_store.get_or_create(_scoped_sid(request, req.Id))
     history = await session.get_history()
 
     supervisor = request.app.state.supervisor
-    answer = await supervisor.invoke(req.Question)
+    try:
+        answer = await supervisor.invoke(req.Question)
+    except Exception as e:
+        logger.warning("chat: supervisor.invoke failed: %s", e)
+        il = getattr(request.app.state, "incident_learner", None)
+        if il:
+            await il.record_error(
+                query=req.Question, error_type=type(e).__name__,
+                error_message=str(e), target_agent="supervisor",
+            )
+        return JSONResponse(
+            content=ApiResponse(code=500, message="agent execution failed").model_dump()
+        )
 
     await session.add_message(req.Question, answer or "")
     await _maybe_compress(session, request.app.state.supervisor)

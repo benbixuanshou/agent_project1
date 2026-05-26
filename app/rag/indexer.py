@@ -2,8 +2,8 @@ import os
 import uuid
 
 from app.config import settings
-from app.ingestion.chunker import MarkdownChunker, DocumentChunk
-from app.ingestion.embedder import EmbeddingService
+from app.rag.chunker import MarkdownChunker, DocumentChunk
+from app.rag.embedder import EmbeddingService
 from langchain_milvus import Milvus
 
 

@@ -36,6 +36,9 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_temperature: float = 0.7
     deepseek_max_tokens: int = 2000
+    deepseek_timeout: int = 30          # seconds, per-request timeout
+    deepseek_max_retries: int = 2       # retry on transient failures (429, 5xx)
+    deepseek_retry_backoff: float = 1.5  # exponential backoff multiplier
 
     # Milvus
     milvus_host: str = "localhost"
@@ -115,6 +118,31 @@ class Settings(BaseSettings):
     mysql_user: str = "superbiz"
     mysql_password: str = "superbiz123"
     mysql_database: str = "superbiz"
+
+    # ── Harness Engineering ──────────────────────────────
+    # Guardrail engine
+    guardrail_rules_path: str = ""  # empty = use default (app/harness/guardrails/rules.yaml)
+    guardrail_enabled: bool = True
+
+    # Circuit breaker
+    circuit_breaker_failure_threshold: int = 3
+    circuit_breaker_cooldown_seconds: int = 30
+
+    # ReAct execution constraints
+    react_max_iterations: int = 15
+    react_max_tool_retries: int = 3
+    react_timeout_seconds: int = 120
+
+    # Incident learner
+    incident_learner_data_dir: str = "data"
+    incident_cluster_threshold: int = 3  # incidents before auto-generating candidate rule
+
+    # Session housekeeping
+    session_cleanup_interval_seconds: int = 3600  # 1 hour
+
+    # Context management
+    context_budget_limit_tokens: int = 16000
+    context_compression_trigger_util: float = 0.70
 
 
 settings = Settings()

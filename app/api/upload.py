@@ -36,7 +36,7 @@ async def upload_file(request: Request, file: UploadFile = File(...)):
     # Auto-index into Milvus
     indexing_error = None
     try:
-        from app.ingestion.indexer import IndexingService
+        from app.rag.indexer import IndexingService
         indexer = IndexingService(
             vector_store=request.app.state.vector_store,
             embedder=request.app.state.embedder,

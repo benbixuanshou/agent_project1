@@ -15,7 +15,7 @@ from langchain_core.retrievers import BaseRetriever
 from pymilvus import Collection, connections, utility
 
 from app.config import settings
-from app.ingestion.embedder import EmbeddingService, init_embedding_service
+from app.rag.embedder import EmbeddingService, init_embedding_service
 
 
 class MilvusStore:

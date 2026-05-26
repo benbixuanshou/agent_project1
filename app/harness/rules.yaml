@@ -1,0 +1,136 @@
+# ═══════════════════════════════════════════════════════════════════════
+# SuperBizAgent Guardrail Rules
+# Declarative constraints enforced by GuardrailEngine at runtime.
+# Rules are evaluated in order — first match wins.
+# Hot-reload: POST /api/admin/guardrails/reload
+# ═══════════════════════════════════════════════════════════════════════
+
+rules:
+  # ═══ INPUT GUARD — user query inspection ═══
+
+  - id: "prompt_injection_detect"
+    description: "Block known prompt injection / jailbreak patterns"
+    scope: "input"
+    when:
+      input_contains:
+        - "ignore previous instructions"
+        - "ignore all previous"
+        - "disregard previous"
+        - "DAN mode"
+        - "jailbreak"
+        - "system prompt:"
+        - "你之前的指令"
+        - "忽略之前的所有指令"
+        - "忘记你的系统提示"
+    action: "block"
+    message: "检测到潜在注入攻击，已拦截。如有误拦请联系管理员。"
+
+  - id: "max_query_length"
+    description: "Reject excessively long queries (DDoS / context overflow)"
+    scope: "input"
+    when:
+      max_query_length: 50000
+    action: "block"
+    message: "查询内容过长（超过50000字符），请精简后再试。"
+
+  - id: "empty_query"
+    description: "Reject empty or whitespace-only queries"
+    scope: "input"
+    when:
+      query_empty: true
+    action: "block"
+    message: "查询不能为空。"
+
+  # ═══ TOOL CALL GUARD — pre-execution constraint check ═══
+
+  - id: "block_destructive_k8s"
+    description: "Block any destructive K8s operations in production namespace"
+    scope: "tool_call"
+    when:
+      tool: "query_k8s_events"
+      params.action: ["delete", "apply", "edit", "scale", "patch"]
+      params.namespace: "production"
+    action: "block"
+    message: "production 命名空间禁止变更操作，已拦截。如需操作请通过变更审批流程。"
+
+  - id: "block_destructive_k8s_prod_like"
+    description: "Block destructive K8s operations in prod-like namespaces"
+    scope: "tool_call"
+    when:
+      tool: "query_k8s_events"
+      params.action: ["delete", "apply", "edit", "scale", "patch"]
+      params.namespace: ["prod", "staging", "pre-prod"]
+    action: "block"
+    message: "该命名空间禁止非只读操作，已拦截。"
+
+  - id: "tool_retry_circuit_break"
+    description: "Circuit-break after 3 consecutive failures of the same tool"
+    scope: "tool_call"
+    when:
+      same_tool_consecutive_failures: 3
+    action: "circuit_break"
+    cooldown_seconds: 30
+    message: "同一工具连续失败3次，已熔断30秒。避免雪崩效应。"
+
+  - id: "max_react_iterations"
+    description: "Force-stop ReAct loop after 15 iterations to prevent infinite loops"
+    scope: "tool_call"
+    when:
+      iteration_count: 15
+    action: "block"
+    message: "ReAct 循环已达到15轮上限，已强制停止。建议检查任务是否过于复杂。"
+
+  - id: "deny_external_url_tool"
+    description: "Prevent tools from accessing arbitrary external URLs"
+    scope: "tool_call"
+    when:
+      tool: "web_search"
+      params.query: ["rm -rf", "DROP TABLE", "DELETE FROM", "curl", "wget"]
+    action: "sanitize"
+    message: "搜索查询包含潜在危险操作，已清理后放行。"
+
+  # ═══ OUTPUT GUARD — response validation ═══
+
+  - id: "require_structured_report"
+    description: "Ensure SRE agent produces a structured report for incident analysis"
+    scope: "output"
+    when:
+      target_agent: "sre"
+      output_too_short: 100
+    action: "validate_and_retry"
+    message: "SRE 报告过短（不足100字符），需要重新生成完整分析报告。"
+
+  - id: "p0_require_human"
+    description: "P0/critical auto-remediation proposals must have human approval"
+    scope: "output"
+    when:
+      alert_severity: "critical"
+      output_contains: ["自动执行", "auto_remediate", "自动重启", "自动回滚"]
+    action: "require_approval"
+    message: "检测到 P0 级别告警的自动处置建议，已标记为需要人工二次确认。"
+
+  - id: "prevent_credential_leak"
+    description: "Sanitize output that may contain credential patterns"
+    scope: "output"
+    when:
+      output_regex: "(?:api[_-]?key|secret|token|password|passwd)[\"':= ]+[\"']?[a-zA-Z0-9+/=]{20,}"
+    action: "sanitize"
+    message: "输出中检测到可能的敏感信息，已脱敏处理。"
+
+  - id: "no_tool_error_propagation"
+    description: "Prevent raw tool error tracebacks from appearing in user-facing output"
+    scope: "output"
+    when:
+      output_regex: "Traceback \\(most recent call last\\)"
+    action: "sanitize"
+    message: "输出中包含原始异常堆栈，已替换为用户友好的错误描述。"
+
+  # ═══ FALLBACK — catch-all for unhandled edge cases ═══
+
+  - id: "unknown_severity_escalation"
+    description: "Flag unknown or missing severity for manual review"
+    scope: "output"
+    when:
+      alert_severity: 0
+    action: "pass"
+    message: ""

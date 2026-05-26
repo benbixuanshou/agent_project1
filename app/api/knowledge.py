@@ -36,7 +36,7 @@ async def confirm_knowledge(request: Request, req: ConfirmRequest):
     document = f"# {title}\n\n## 排查结果\n\n{result[:8000]}"
 
     try:
-        from app.ingestion.indexer import IndexingService
+        from app.rag.indexer import IndexingService
         indexer = IndexingService(vector_store, embedder)
         await indexer.index_text(document, source=req.cache_key)
         logger.info("knowledge_confirmed: %s", req.cache_key)
